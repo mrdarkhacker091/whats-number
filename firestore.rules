@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ["REPLACE_WITH_ADMIN_EMAIL"];
+    }
+
+    // Dedicated collections keep this app's data separate from Movie Hub.
+    match /number_operations_numbers/{recordId} {
+      allow read, create, update, delete: if signedInAdmin();
+      allow create: if signedInAdmin()
+        && request.resource.data.phone is string
+        && request.resource.data.phone.matches('^\\+[1-9][0-9]{7,14}$')
+        && request.resource.data.status in ['queued', 'owner_confirmed', 'completed', 'failed'];
+      allow update: if signedInAdmin()
+        && request.resource.data.phone == resource.data.phone
+        && request.resource.data.status in ['queued', 'owner_confirmed', 'completed', 'failed'];
+    }
+
+    match /number_operations_activity/{eventId} {
+      allow read, create: if signedInAdmin();
+      allow update, delete: if false;
+    }
+
+    // No client access to settings/secrets.
+    match /number_operations_settings/{docId} {
+      allow read, write: if false;
+    }
+
+    // Deny everything else by default; existing Movie Hub rules are not replaced
+    // automatically. Merge these matches carefully with your current rules.
+  }
+}
