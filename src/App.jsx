@@ -25,8 +25,8 @@ const statuses = [
 ];
 const statusLabel = v => statuses.find(s => s.value === v)?.label || v;
 const stamp = v => v?.toDate ? v.toDate().toLocaleString() : "Just now";
-const cleanPhone = v => String(v || "").trim().replace(/[\\s().-]/g, "");
-const validPhone = v => /^\\+[1-9]\\d{7,14}$/.test(v);
+const cleanPhone = v => String(v || "").trim().replace(/[\s().-]/g, "");
+const validPhone = v => /^\+[1-9]\d{7,14}$/.test(v);
 const initials = email => (email || "A").slice(0, 1).toUpperCase();
 
 function App() {
@@ -98,7 +98,7 @@ function App() {
     } catch (e) { flash(e.message); } finally { setBusy(false); }
   }
   function parseImport(raw) {
-    return [...new Set(raw.split(/\\r?\\n/).map(line => cleanPhone(line.split(/[;,\\t]/)[0])).filter(validPhone))];
+    return [...new Set(raw.split(/\r?\n/).map(line => cleanPhone(line.split(/[;,\t]/)[0])).filter(validPhone))];
   }
   async function doImport() {
     const phones = parseImport(importText);
@@ -116,7 +116,7 @@ function App() {
       }
       await audit("bulk_import", `${added} valid unique numbers imported`);
       await telegramNotice(`NumberOps: ${added} phone number records were bulk imported. Owner confirmation is pending.`);
-      setImportReport({ added, invalidOrDuplicate: importText.split(/\\r?\\n/).filter(Boolean).length - phones.length });
+      setImportReport({ added, invalidOrDuplicate: importText.split(/\r?\n/).filter(Boolean).length - phones.length });
       setImportText(""); flash(`${added} records imported.`);
     } catch (e) { flash(e.message); }
     finally { setBusy(false); }
