@@ -19,6 +19,7 @@ const NUMBERS = "number_operations_numbers";
 const EVENTS = "number_operations_activity";
 const statuses = [
   { value: "queued", label: "Queued" },
+  { value: "verification_requested", label: "Owner verification requested" },
   { value: "owner_confirmed", label: "Owner confirmed" },
   { value: "completed", label: "Completed" },
   { value: "failed", label: "Failed" }
@@ -129,6 +130,18 @@ function App() {
       flash("Record updated.");
     } catch (e) { flash(e.message); }
   }
+  async function requestOwnerVerification(row) {
+    try {
+      await updateDoc(doc(db, NUMBERS, row.id), {
+        status: "verification_requested",
+        verificationRequestedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      await audit("owner_verification_requested", "Admin requested that the number owner complete WhatsApp verification directly in the official app. No code was requested or collected by NumberOps.", row.phone);
+      await telegramNotice(`NumberOps: owner verification is requested for ${row.phone}. The owner must complete verification directly in the official WhatsApp app. Do not send verification codes to this bot or dashboard.`);
+      flash("Owner verification request recorded. The owner must complete verification in WhatsApp.");
+    } catch (e) { flash(e.message); }
+  }
   async function removeRow(row) {
     if (!confirm(`Delete record ${row.phone}?`)) return;
     try { await deleteDoc(doc(db, NUMBERS, row.id)); await audit("record_deleted", "Number record deleted", row.phone); flash("Record deleted."); }
@@ -140,6 +153,7 @@ function App() {
   }), [rows, queryText, filter]);
   const stats = useMemo(() => ({
     total: rows.length, queued: rows.filter(r => r.status === "queued").length,
+    verification_requested: rows.filter(r => r.status === "verification_requested").length,
     owner_confirmed: rows.filter(r => r.status === "owner_confirmed").length,
     completed: rows.filter(r => r.status === "completed").length,
     failed: rows.filter(r => r.status === "failed").length
@@ -173,10 +187,11 @@ function App() {
       <header className="topbar"><button className="icon-btn menu-btn" onClick={()=>setShowMobileNav(true)}><Menu/></button><div className="crumb">Workspace <span>/</span> Overview</div><div className="top-actions"><span className="live-indicator"><i/> LIVE DATABASE</span><button className="icon-btn" title="Refresh" onClick={()=>window.location.reload()}><RefreshCw size={17}/></button><div className="avatar">{initials(user.email)}</div></div></header>
       <div className="content">
         <div className="page-heading"><div><div className="eyebrow">OPERATIONS / DASHBOARD</div><h1>Good to see you.</h1><p>Monitor authorized onboarding records and operational activity.</p></div><div className="heading-actions"><button className="btn-secondary" onClick={exportCsv}><ArrowDownToLine size={16}/> Export CSV</button><button className="primary" onClick={()=>setShowAdd(true)}><Plus size={17}/> Add number</button></div></div>
-        <div className="safety-banner"><div className="banner-icon"><ShieldCheck size={19}/></div><div><b>Owner-authorized workflow</b><p>This tool tracks numbers and owner-confirmed progress. It does not register WhatsApp accounts, request or collect OTPs, or read authentication codes from Telegram.</p></div><button className="icon-btn" title="Dismiss" onClick={e=>e.currentTarget.parentElement.remove()}><X size={16}/></button></div>
+        <div className="safety-banner"><div className="banner-icon"><ShieldCheck size={19}/></div><div><b>Owner-authorized workflow</b><p>This tool records owner-verification requests and progress. Owners complete verification directly in the official WhatsApp app. NumberOps does not request, receive or store verification codes.</p></div><button className="icon-btn" title="Dismiss" onClick={e=>e.currentTarget.parentElement.remove()}><X size={16}/></button></div>
         <section className="metric-grid">
           <Metric icon={<Users/>} label="TOTAL RECORDS" value={stats.total} tone="blue" foot="All imported numbers"/>
           <Metric icon={<Clock3/>} label="QUEUED" value={stats.queued} tone="amber" foot="Awaiting owner action"/>
+          <Metric icon={<Send/>} label="VERIFICATION REQUESTED" value={stats.verification_requested} tone="violet" foot="Owner must verify in WhatsApp"/>
           <Metric icon={<ShieldCheck/>} label="OWNER CONFIRMED" value={stats.owner_confirmed} tone="violet" foot="Consent confirmed"/>
           <Metric icon={<CheckCircle2/>} label="COMPLETED" value={stats.completed} tone="green" foot="Marked complete"/>
           <Metric icon={<AlertCircle/>} label="FAILED" value={stats.failed} tone="red" foot="Needs review"/>
@@ -185,7 +200,7 @@ function App() {
           <div className="panel-heading"><div><div className="panel-title">Number records</div><p>Bulk manage records and update their onboarding status.</p></div><div className="heading-actions"><button className="btn-secondary" onClick={()=>setShowImport(true)}><FileUp size={16}/> Bulk import</button></div></div>
           <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={queryText} onChange={e=>setQueryText(e.target.value)} placeholder="Search phone number or note…"/></div><div className="filterbox"><Filter size={15}/><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">All statuses</option>{statuses.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select><ChevronDown size={14}/></div><span className="result-count">{filtered.length} records</span></div>
           <div className="table-scroll"><table><thead><tr><th>PHONE NUMBER</th><th>STATUS</th><th>ADMIN NOTE</th><th>LAST UPDATED</th><th>ACTIONS</th></tr></thead><tbody>
-          {filtered.map(row=><RecordRow key={row.id} row={row} onStatus={changeStatus} onDelete={removeRow}/>)}
+          {filtered.map(row=><RecordRow key={row.id} row={row} onStatus={changeStatus} onDelete={removeRow} onRequestVerification={requestOwnerVerification}/>)}
           {!filtered.length && <tr><td colSpan="5"><div className="empty"><Database size={25}/><b>No records found</b><span>Import a CSV or add a number to get started.</span></div></td></tr>}
           </tbody></table></div>
         </section>
@@ -204,7 +219,7 @@ function App() {
       </div>
     </main>
     {showImport && <Modal title="Bulk import numbers" subtitle="Paste one international-format number per line. CSV rows use the first column." onClose={()=>setShowImport(false)}>
-      <div className="modal-tip"><ShieldCheck size={16}/> Importing only creates tracking records. It does not contact phone numbers or request verification codes.</div>
+      <div className="modal-tip"><ShieldCheck size={16}/> Importing creates tracking records only. Admins can record an owner-verification request; the owner completes verification directly in WhatsApp.</div>
       <textarea rows="8" value={importText} onChange={e=>setImportText(e.target.value)} placeholder={"+2348012345678\n+2348098765432\n+447700900123"} />
       <div className="modal-foot"><span>{parseImport(importText).length} valid unique numbers</span><button className="primary" disabled={busy||!parseImport(importText).length} onClick={async()=>{await doImport();}}>{busy?"Importing…":"Import records"}</button></div>
       {importReport && <p className="success-line"><Check size={15}/> Imported {importReport.added}; invalid/duplicate lines: {importReport.invalidOrDuplicate}.</p>}
@@ -217,10 +232,10 @@ function App() {
 }
 
 function Metric({icon,label,value,tone,foot}) { return <div className="metric-card"><div className={`metric-icon ${tone}`}>{icon}</div><div className="metric-label">{label}</div><div className="metric-value">{value.toLocaleString()}</div><div className="metric-foot">{foot}</div></div>; }
-function RecordRow({row,onStatus,onDelete}) {
+function RecordRow({row,onStatus,onDelete,onRequestVerification}) {
   const [note,setNote]=useState(row.note||""); const [status,setStatus]=useState(row.status||"queued");
   useEffect(()=>{setNote(row.note||"");setStatus(row.status||"queued");},[row.note,row.status]);
-  return <tr><td><div className="phone-cell"><div className="phone-icon"><Smartphone size={15}/></div><b>{row.phone}</b></div></td><td><select className={`status-select ${status}`} value={status} onChange={e=>setStatus(e.target.value)}>{statuses.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></td><td><input className="note-input" value={note} onChange={e=>setNote(e.target.value)} placeholder="Add note…"/></td><td className="date-cell">{stamp(row.updatedAt||row.createdAt)}</td><td><div className="row-actions"><button className="save-btn" onClick={()=>onStatus(row,status,note)} title="Save changes"><Check size={15}/></button><button className="delete-btn" onClick={()=>onDelete(row)} title="Delete record"><Trash2 size={15}/></button></div></td></tr>;
+  return <tr><td><div className="phone-cell"><div className="phone-icon"><Smartphone size={15}/></div><b>{row.phone}</b></div></td><td><select className={`status-select ${status}`} value={status} onChange={e=>setStatus(e.target.value)}>{statuses.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></td><td><input className="note-input" value={note} onChange={e=>setNote(e.target.value)} placeholder="Add note…"/></td><td className="date-cell">{stamp(row.updatedAt||row.createdAt)}</td><td><div className="row-actions"><button className="save-btn" onClick={()=>onStatus(row,status,note)} title="Save changes"><Check size={15}/></button><button className="save-btn" onClick={()=>onRequestVerification(row)} title="Record owner verification request"><Send size={15}/></button><button className="delete-btn" onClick={()=>onDelete(row)} title="Delete record"><Trash2 size={15}/></button></div></td></tr>;
 }
 function Modal({title,subtitle,onClose,children}) { return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><div className="modal"><div className="modal-header"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-btn" onClick={onClose}><X size={18}/></button></div>{children}</div></div>; }
 

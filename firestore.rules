@@ -13,10 +13,10 @@ service cloud.firestore {
       allow create: if signedInAdmin()
         && request.resource.data.phone is string
         && request.resource.data.phone.matches('^\\+[1-9][0-9]{7,14}$')
-        && request.resource.data.status in ['queued', 'owner_confirmed', 'completed', 'failed'];
+        && request.resource.data.status in ['queued', 'verification_requested', 'owner_confirmed', 'completed', 'failed'];
       allow update: if signedInAdmin()
         && request.resource.data.phone == resource.data.phone
-        && request.resource.data.status in ['queued', 'owner_confirmed', 'completed', 'failed'];
+        && request.resource.data.status in ['queued', 'verification_requested', 'owner_confirmed', 'completed', 'failed'];
     }
 
     match /number_operations_activity/{eventId} {
